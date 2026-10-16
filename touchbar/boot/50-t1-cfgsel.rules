@@ -1,0 +1,5 @@
+# Re-select USB configuration 2 for the Apple T1 iBridge when it
+# (re)appears in the default configuration 1 (happens after the
+# initramfs->root systemd soft-reboot reset).
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="05ac", ATTR{idProduct}=="8600", RUN+="/usr/local/lib/t1bridge/t1-cfg-fix.sh"
+ACTION=="change", SUBSYSTEM=="usb", ATTR{idVendor}=="05ac", ATTR{idProduct}=="8600", ATTR{bConfigurationValue}=="1", RUN+="/usr/local/lib/t1bridge/t1-cfg-fix.sh"

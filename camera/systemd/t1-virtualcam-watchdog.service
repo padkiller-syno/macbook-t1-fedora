@@ -1,0 +1,11 @@
+[Unit]
+Description=Watchdog camera virtuelle T1 (demarre le pipeline a la demande)
+After=pipewire.service
+
+[Service]
+ExecStart=/home/benoit/t1-diag/virtualcam-watchdog.sh
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

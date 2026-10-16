@@ -1,0 +1,13 @@
+module t1hwframe 1.0.0;
+
+require {
+	type init_t;
+	type user_tmp_t;
+	class file { read write map getattr lock open };
+}
+
+# t1-touchbar-hw (init_t) doit écrire les frames dans le memfd
+# « t1-frame » créé par le renderer user (label user_tmp_t) et
+# passé via SCM_RIGHTS. Sans cette règle, chaque cycle de connexion
+# meurt sur un AVC denied { write } -> session-revocation -> noir.
+allow init_t user_tmp_t:file { read write map getattr lock open };

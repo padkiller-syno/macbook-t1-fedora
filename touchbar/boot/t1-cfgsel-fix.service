@@ -1,0 +1,12 @@
+[Unit]
+Description=T1 iBridge USB configuration 2 fix (boot backstop)
+After=systemd-udevd.service multi-user.target
+Wants=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/t1bridge/t1-cfg-fix.sh
+
+[Install]
+WantedBy=multi-user.target
