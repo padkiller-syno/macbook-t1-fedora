@@ -1,6 +1,7 @@
 #!/bin/bash
 # Fournisseur bureau t1bridge (contrat « Desktop provider v1 ») pour GNOME + PipeWire.
-# Touch Bar : volume / sourdine (wpctl), média (MPRIS), extinction avec l'écran (Mutter).
+# Touch Bar : volume / sourdine (wpctl), média (MPRIS), extinction avec l'écran (Mutter),
+# bulle de niveau GNOME (extension t1-osd@benoit) pour volume, luminosité écran et clavier.
 # Appelé par t1-touchbar avec : v1 <opération> [argument]   (délai max 500 ms)
 set -u
 export LC_ALL=C   # awk : point décimal (0.38), pas la virgule française
@@ -16,10 +17,28 @@ mpris() {  # mpris <Méthode>
   busctl --user call "$p" /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player "$1" >/dev/null
 }
 
+osd() {  # osd <icône> <niveau 0..1> : bulle GNOME, sans jamais faire échouer l'action
+  busctl --user call org.gnome.Shell /fr/benoit/T1Osd fr.benoit.T1Osd Show sd "$1" "$2" >/dev/null 2>&1 || true
+}
+
+osd_volume() {  # bulle volume d'après l'état réel de PipeWire
+  local v lvl icon
+  v=$(wpctl get-volume $SINK 2>/dev/null) || return 0
+  lvl=$(awk '{v=$2; if (v>1) v=1; print v}' <<<"$v")
+  if [[ $v == *MUTED* ]]; then icon=audio-volume-muted-symbolic; lvl=0
+  else icon=$(awk '{v=$1; print (v==0 ? "audio-volume-muted-symbolic" : v<0.34 ? "audio-volume-low-symbolic" : v<0.67 ? "audio-volume-medium-symbolic" : "audio-volume-high-symbolic")}' <<<"$lvl"); fi
+  osd "$icon" "$lvl"
+}
+
+osd_sysfs() {  # osd_sysfs <icône> <dossier backlight|leds>
+  local b m; b=$(cat "$2/brightness" 2>/dev/null) m=$(cat "$2/max_brightness" 2>/dev/null)
+  [ -n "$b" ] && [ -n "$m" ] && [ "$m" -gt 0 ] && osd "$1" "$(awk -v b="$b" -v m="$m" 'BEGIN{print b/m}')"
+}
+
 [ "${1:-}" = v1 ] || exit 2
 case "${2:-}" in
   status)
-    caps=$((1 + 16)) display=1
+    caps=$((1 + 8 + 16)) display=1   # 1 audio, 8 retour de niveau, 16 écran
     v=$(wpctl get-volume $SINK 2>/dev/null) || exit 1
     vol=$(awk '{v=int($2*100+0.5); if (v>100) v=100; print v}' <<<"$v")
     muted=0; [[ $v == *MUTED* ]] && muted=1
@@ -31,8 +50,10 @@ case "${2:-}" in
     ;;
   set-volume)
     [[ ${3:-} =~ ^[0-9]+$ ]] && [ "$3" -le 100 ] || exit 2
-    wpctl set-volume $SINK "$3%" ;;
-  toggle-mute)       wpctl set-mute $SINK toggle ;;
+    wpctl set-volume $SINK "$3%"; osd_volume ;;
+  toggle-mute)       wpctl set-mute $SINK toggle; osd_volume ;;
+  show-display-brightness) osd_sysfs display-brightness-symbolic /sys/class/backlight/gmux_backlight ;;
+  show-keyboard-backlight) osd_sysfs keyboard-brightness-symbolic /sys/class/leds/spi::kbd_backlight ;;
   media-previous)    mpris Previous ;;
   media-play-pause)  mpris PlayPause ;;
   media-next)        mpris Next ;;

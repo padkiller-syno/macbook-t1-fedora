@@ -1,0 +1,6 @@
+{
+  "uuid": "t1-osd@benoit",
+  "name": "T1 OSD",
+  "description": "Expose la bulle de niveau GNOME (volume, luminosité) en D-Bus pour le fournisseur bureau t1bridge de la Touch Bar.",
+  "shell-version": ["48"]
+}

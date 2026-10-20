@@ -20,7 +20,7 @@ t1bridge cible les kernels **7.x**. Deux modules ont dû être portés.
 | **Profils d'énergie** (CPU, turbo, secteur) | ✅ économie 800 MHz, équilibré sans turbo, performance turbo ; secteur → équilibré | [`display/`](#écran-noir--gel--amdgpu-polaris) |
 | **Clavier** `@` / `<` inversés | ✅ `applespi iso_layout=1` | [`../keyboard/`](../keyboard/README.md) |
 | **Touch ID** (sudo, polkit, verrouillage, GDM) | ✅ 2 doigts, Touch Bar en français | [`touchid/`](#touch-id) |
-| **Touch Bar : volume / média** | ✅ fournisseur bureau GNOME + PipeWire | [`touchbar/desktop-provider/`](#touch-bar--volume-sourdine-média) |
+| **Touch Bar : volume / média** | ✅ fournisseur bureau GNOME + PipeWire, bulle OSD (extension) | [`touchbar/desktop-provider/`](#touch-bar--volume-sourdine-média) |
 | **Capteur de lumière ambiante** | ✅ déjà fonctionnel (luminosité auto GNOME) | [ici](#capteur-de-lumière-ambiante) |
 | **Modules T1 sous DKMS** | ✅ reconstruits à chaque nouveau kernel | [`dkms/`](#après-une-mise-à-jour-du-kernel--dkms) |
 | Veille / hibernation | ❌ impossible : la Radeon Polaris ne se réveille pas → **interdites** au niveau système | [`veille/`](#veille-et-hibernation--impossibles-amdgpu) |
@@ -540,6 +540,38 @@ Pièges :
   (virgule décimale) → volume affiché à 0.
 - `busctl --user list` coûte ~230 ms (introspection de chaque nom) : utiliser
   un seul `ListNames` pour trouver `org.mpris.MediaPlayer2.*`.
+
+### Bulle de niveau (OSD) pour volume et luminosités
+
+Les réglages faits **depuis la Touch Bar** n'affichaient aucune bulle GNOME
+(les touches physiques, elles, passent par gsd-media-keys). Or
+`org.gnome.Shell.ShowOSD` est **refusé** aux programmes extérieurs depuis
+GNOME 41 (`AccessDenied: ShowOSD is not allowed`).
+
+Solution : une mini-extension GNOME Shell,
+[`t1-osd@benoit`](touchbar/desktop-provider/t1-osd@benoit/extension.js), qui
+exporte sur le bus de session de gnome-shell une méthode
+`fr.benoit.T1Osd.Show(icône, niveau 0..1)` → `Main.osdWindowManager.show(-1, …)`
+(signature GNOME 48 : `show(monitorIndex, icon, label, level, maxLevel)`,
+`-1` = tous les écrans ; `showAll` n'existe pas en 48).
+
+Le fournisseur annonce alors la capacité **8 (level feedback)** :
+
+| Action Touch Bar | Appel au fournisseur | Bulle |
+|---|---|---|
+| volume ± / curseur | `set-volume N` | icône muet/bas/moyen/haut + niveau réel (`wpctl get-volume`) |
+| sourdine | `toggle-mute` | idem |
+| luminosité écran | `show-display-brightness` (envoyé par le renderer après le réglage) | `gmux_backlight` |
+| luminosité clavier | `show-keyboard-backlight` | `spi::kbd_backlight` |
+
+Les appels OSD sont « au mieux » (`|| true`) : si l'extension n'est pas
+chargée, l'action réussit quand même — un code de retour non nul rendrait le
+fournisseur indisponible pour le renderer.
+
+Installation :
+`cp -r t1-osd@benoit ~/.local/share/gnome-shell/extensions/`, l'ajouter à
+`org.gnome.shell enabled-extensions`, puis **se reconnecter** (sous Wayland,
+une nouvelle extension n'est détectée qu'au démarrage de la session).
 
 ## Capteur de lumière ambiante
 
