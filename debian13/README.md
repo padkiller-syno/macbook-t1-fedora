@@ -22,7 +22,7 @@ t1bridge cible les kernels **7.x**. Deux modules ont dû être portés.
 | **Touch Bar : volume / média** | ✅ fournisseur bureau GNOME + PipeWire | [`touchbar/desktop-provider/`](#touch-bar--volume-sourdine-média) |
 | **Capteur de lumière ambiante** | ✅ déjà fonctionnel (luminosité auto GNOME) | [ici](#capteur-de-lumière-ambiante) |
 | **Modules T1 sous DKMS** | ✅ reconstruits à chaque nouveau kernel | [`dkms/`](#après-une-mise-à-jour-du-kernel--dkms) |
-| Veille (suspend) | ❌ ne marche pas avec la pile t1bridge → veille désactivée (auto + capot) | [`systeme/`](#réglages-système-revue-du-syslog) |
+| Veille / hibernation | ❌ impossible : la Radeon Polaris ne se réveille pas → **interdites** au niveau système | [`veille/`](#veille-et-hibernation--impossibles-amdgpu) |
 
 ---
 
@@ -359,6 +359,80 @@ Les deux : [`systeme/fix-veille-realtek.sh`](systeme/fix-veille-realtek.sh).
 Apple non distribuable, le Bluetooth marche), `clm_blob`/`txcap_blob`
 brcmfmac (n'existent pas pour la 43602), avertissements MDS/MMIO « SMT on »,
 `hid_field_extract() n (64) > 32` sur l'iBridge, warnings GNOME/ALSA/keyring.
+
+## Veille et hibernation — impossibles (amdgpu)
+
+**Verdict : ni la veille ni l'hibernation ne fonctionnent** sur ce Mac sous
+Linux 6.12, à cause de la reprise de la **Radeon Polaris** (qui pilote l'eDP).
+La T1, le Wi-Fi, le son et le clavier, eux, reviennent bien.
+
+### Monitoring
+
+[`veille/install-sleep-debug.sh`](veille/install-sleep-debug.sh) :
+
+- `pm_debug_messages` + `pm_print_times` (persistants via tmpfiles) ;
+- crochet `/usr/lib/systemd/system-sleep/t1-sleep-debug` : photo d'état
+  (T1 USB/interfaces/pilotes, DRM, amdgpu niveau/MCLK, vidéo, réseau,
+  services t1bridge, `t1bridge status`) **avant**, **au réveil** et
+  **+30 s**, dans `/var/log/t1-sleep/` ;
+- journal persistant (`/var/log/journal`) + `systemd-pstore` : l'Oops d'un
+  gel est récupéré au boot suivant dans `/var/lib/systemd/pstore/`.
+
+Piège : l'app **claude-desktop** (Electron) pose un inhibiteur « sleep »
+bloquant → `systemctl suspend` refusé ; tester avec `systemctl suspend -i`.
+
+### Résultats
+
+| Essai | Résultat |
+|---|---|
+| `deep` (S3), amdgpu `high` | réveil, puis gel |
+| `deep`, amdgpu `auto` pendant la veille ([`sleep-amdgpu-auto.sh`](veille/sleep-amdgpu-auto.sh)) | même gel |
+| `s2idle` | aucun réveil |
+| hibernation (`HibernateMode=shutdown`) | gel pendant l'écriture de l'image (rétroéclairage clavier resté allumé) |
+
+Trace du 1er essai (pstore) :
+
+```
+amdgpu: SMU load firmware failed
+amdgpu: smu firmware loading failed
+amdgpu 0000:01:00.0: amdgpu: amdgpu_device_ip_resume failed (-22).
+amdgpu 0000:01:00.0: PM: failed to resume async: error -22
+PM: suspend exit
+BUG: kernel NULL pointer dereference
+RIP: dce110_fill_display_configs+0x1a [amdgpu]
+  dce11_pplib_apply_display_requirements / dce112_update_clocks
+  dc_commit_state_no_check / amdgpu_dm_atomic_commit_tail   (commit atomique de gnome-shell)
+```
+
+Au réveil, le SMU (contrôleur d'énergie de la Polaris) ne recharge pas son
+firmware → GPU mort → le premier commit d'affichage de gnome-shell
+déréférence un pointeur nul dans le code DC → gel. L'hibernation repasse
+par le même `resume`/`thaw` d'amdgpu avant d'écrire l'image, d'où le même
+résultat. Ce n'est **pas** un problème t1bridge (contrairement à ce que
+laissait penser sa doc) : sur cette machine, c'est amdgpu qui tombe d'abord.
+
+### Ce qui est en place
+
+[`systeme/fix-pas-de-veille.sh`](systeme/fix-pas-de-veille.sh) :
+
+```ini
+# /etc/systemd/sleep.conf.d/pas-de-veille.conf
+[Sleep]
+AllowSuspend=no
+AllowHibernation=no
+AllowHybridSleep=no
+AllowSuspendThenHibernate=no
+```
+
+- `CanSuspend`/`CanHibernate` → `no` : GNOME masque « Mettre en veille ».
+- **UPower** : `CriticalPowerAction=HybridSleep` (défaut Debian) remplacé par
+  `PowerOff` — sinon, à 2 % de batterie, l'hybrid-sleep gèle la machine et la
+  batterie se vide sans rien sauvegarder.
+- Capot fermé = verrouillage ; pour ranger la machine : **l'éteindre**.
+
+Pour retester après une mise à jour du kernel : supprimer
+`/etc/systemd/sleep.conf.d/pas-de-veille.conf`, puis `systemctl suspend -i`
+et lire `/var/log/t1-sleep/` + `journalctl -k -b -1`.
 
 ## Touch Bar : volume, sourdine, média
 
