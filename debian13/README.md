@@ -19,6 +19,9 @@ t1bridge cible les kernels **7.x**. Deux modules ont dû être portés.
 | **Écran noir / gel** (amdgpu Polaris) | ✅ `power_dpm_force_performance_level=high` | [`display/`](display/) |
 | **Clavier** `@` / `<` inversés | ✅ `applespi iso_layout=1` | [`../keyboard/`](../keyboard/README.md) |
 | **Touch ID** (sudo, polkit, verrouillage, GDM) | ✅ 2 doigts, Touch Bar en français | [`touchid/`](#touch-id) |
+| **Touch Bar : volume / média** | ✅ fournisseur bureau GNOME + PipeWire | [`touchbar/desktop-provider/`](#touch-bar--volume-sourdine-média) |
+| **Capteur de lumière ambiante** | ✅ déjà fonctionnel (luminosité auto GNOME) | [ici](#capteur-de-lumière-ambiante) |
+| **Modules T1 sous DKMS** | ✅ reconstruits à chaque nouveau kernel | [`dkms/`](#après-une-mise-à-jour-du-kernel--dkms) |
 | Veille (suspend) | ❌ ne marche pas avec la pile t1bridge → veille désactivée (auto + capot) | [`systeme/`](#réglages-système-revue-du-syslog) |
 
 ---
@@ -357,11 +360,69 @@ Apple non distribuable, le Bluetooth marche), `clm_blob`/`txcap_blob`
 brcmfmac (n'existent pas pour la 43602), avertissements MDS/MMIO « SMT on »,
 `hid_field_extract() n (64) > 32` sur l'iBridge, warnings GNOME/ALSA/keyring.
 
-## Après une mise à jour du kernel
+## Touch Bar : volume, sourdine, média
 
-- **Son** : reconstruit tout seul (DKMS).
-- **Touch Bar + caméra** : modules installés à la main dans
-  `updates/t1bridge/` → **pas** reconstruits. Recompiler `t1_cfgsel`,
-  `appletbdrm` (patché), `uvcvideo` (patché) et `apple_t1_ncm` contre le
-  nouveau kernel, puis relancer `install-touchbar.sh` / `install-touchid.sh`.
-- `v4l2loopback` : DKMS (paquet Debian), automatique.
+t1bridge ne fournit aucun contrôle de volume/média : il définit un contrat
+« **Desktop provider v1** » (`docs/interfaces.md`) — un exécutable utilisateur
+appelé par le renderer avec `v1 status | set-volume N | toggle-mute |
+media-previous | media-play-pause | media-next` (délai max 500 ms, sortie
+`T1BRIDGE-DESKTOP 1 <caps> <volume> <muet> [<écran>]`).
+
+[`touchbar/desktop-provider/t1-desktop-provider`](touchbar/desktop-provider/t1-desktop-provider)
+(bash, ~45 ms) :
+
+- **volume / sourdine** : `wpctl` sur `@DEFAULT_AUDIO_SINK@` ;
+- **média** : premier lecteur MPRIS du bus de session (Firefox, Spotify, VLC…),
+  boutons affichés seulement si un lecteur existe ;
+- **extinction avec l'écran** (capacité 16) : `PowerSaveMode` de
+  `org.gnome.Mutter.DisplayConfig` ≠ 0 → Touch Bar sombre.
+
+Branchement (sans root) :
+[`desktop-provider.conf`](touchbar/desktop-provider/desktop-provider.conf) →
+`~/.config/systemd/user/t1-touchbar.service.d/`, script → `~/.local/bin/`, puis
+`systemctl --user daemon-reload && systemctl --user restart t1-touchbar.service`.
+
+Pièges :
+- `LC_ALL=C` obligatoire : en locale `fr_FR`, `awk` lit `0.38` comme `0`
+  (virgule décimale) → volume affiché à 0.
+- `busctl --user list` coûte ~230 ms (introspection de chaque nom) : utiliser
+  un seul `ListNames` pour trouver `org.mpris.MediaPlayer2.*`.
+
+## Capteur de lumière ambiante
+
+Rien à faire : le capteur de la T1 apparaît en `iio:device0` (`als`, via
+`hid-sensor-hub` sur l'iBridge), `iio-sensor-proxy` le voit
+(`HasAmbientLight = true`, valeur en lux) et GNOME a déjà
+`org.gnome.settings-daemon.plugins.power ambient-enabled = true`
+(Paramètres → Énergie → Luminosité automatique).
+
+## Après une mise à jour du kernel — DKMS
+
+Les 4 modules T1 sont sous **DKMS** (`t1bridge-debian/0.1.12`) et sont
+reconstruits automatiquement à chaque nouveau kernel Debian, comme le son
+(`snd_hda_macbookpro`) et `v4l2loopback` :
+
+| Module | Source |
+|---|---|
+| `t1_cfgsel` | t1bridge tel quel |
+| `appletbdrm` | t1bridge + [garde `drm_dev_set_dma_dev`](touchbar/patches/appletbdrm-6.12-drm_dev_set_dma_dev.patch) |
+| `apple_t1_ncm` | t1bridge tel quel |
+| `uvcvideo` | uvcvideo **6.12.113** + [parsing H.264 T1](touchbar/patches/uvcvideo-6.12.113-h264-t1.patch) |
+
+```sh
+bash dkms/build-dkms-tree.sh          # ~/t1/dkms/t1bridge-debian-0.1.12 (t1bridge 81cbdf8 + patches)
+sudo bash dkms/install-dkms-t1.sh     # dkms add/build/install, retire les copies manuelles, initramfs
+dkms status                           # t1bridge-debian/0.1.12 ... installed
+```
+
+[`dkms.conf`](dkms/dkms.conf) installe les 4 modules dans `updates/dkms`
+(prioritaires sur le `uvcvideo` du kernel) ; `t1_cfgsel` reste dans
+l'initramfs via `/etc/initramfs-tools/modules` (hook `dkms` exécuté avant
+`update-initramfs` au postinst du kernel).
+
+⚠️ Limite : `uvcvideo` est figé sur les sources **6.12.113**. Si une future
+6.12.x modifie ce driver, sa compilation DKMS peut échouer → seule la caméra
+tombe ; régénérer le patch sur les nouvelles sources.
+
+Annuler : `sudo bash dkms/install-dkms-t1.sh annuler`
+(`touchbar/install-touchbar.sh annuler` le fait aussi).

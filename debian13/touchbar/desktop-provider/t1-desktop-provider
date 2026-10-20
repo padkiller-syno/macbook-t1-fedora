@@ -1,0 +1,40 @@
+#!/bin/bash
+# Fournisseur bureau t1bridge (contrat « Desktop provider v1 ») pour GNOME + PipeWire.
+# Touch Bar : volume / sourdine (wpctl), média (MPRIS), extinction avec l'écran (Mutter).
+# Appelé par t1-touchbar avec : v1 <opération> [argument]   (délai max 500 ms)
+set -u
+export LC_ALL=C   # awk : point décimal (0.38), pas la virgule française
+SINK=@DEFAULT_AUDIO_SINK@
+
+player() {  # premier lecteur MPRIS présent sur le bus de session
+  busctl --user call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus ListNames 2>/dev/null \
+    | grep -o '"org\.mpris\.MediaPlayer2\.[^"]*"' | head -1 | tr -d '"'
+}
+
+mpris() {  # mpris <Méthode>
+  local p; p=$(player); [ -n "$p" ] || exit 1
+  busctl --user call "$p" /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player "$1" >/dev/null
+}
+
+[ "${1:-}" = v1 ] || exit 2
+case "${2:-}" in
+  status)
+    caps=$((1 + 16)) display=1
+    v=$(wpctl get-volume $SINK 2>/dev/null) || exit 1
+    vol=$(awk '{v=int($2*100+0.5); if (v>100) v=100; print v}' <<<"$v")
+    muted=0; [[ $v == *MUTED* ]] && muted=1
+    [ -n "$(player)" ] && caps=$((caps + 2))
+    psm=$(busctl --user get-property org.gnome.Mutter.DisplayConfig /org/gnome/Mutter/DisplayConfig \
+          org.gnome.Mutter.DisplayConfig PowerSaveMode 2>/dev/null | awk '{print $2}')
+    [ -n "$psm" ] && [ "$psm" != 0 ] && display=0
+    echo "T1BRIDGE-DESKTOP 1 $caps $vol $muted $display"
+    ;;
+  set-volume)
+    [[ ${3:-} =~ ^[0-9]+$ ]] && [ "$3" -le 100 ] || exit 2
+    wpctl set-volume $SINK "$3%" ;;
+  toggle-mute)       wpctl set-mute $SINK toggle ;;
+  media-previous)    mpris Previous ;;
+  media-play-pause)  mpris PlayPause ;;
+  media-next)        mpris Next ;;
+  *) exit 2 ;;
+esac

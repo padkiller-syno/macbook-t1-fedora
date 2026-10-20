@@ -12,6 +12,7 @@ MODDIR=/lib/modules/$KV/updates/t1bridge
 if [ "${1:-}" = annuler ]; then
   systemctl --global disable t1-touchbar.service 2>/dev/null || true
   systemctl disable --now t1-touchbar-hw.service t1-touchbar-hw.socket 2>/dev/null || true
+  dkms remove t1bridge-debian/0.1.12 --all 2>/dev/null || true; rm -rf /usr/src/t1bridge-debian-0.1.12
   rm -rf "$MODDIR" /usr/lib/t1bridge
   rm -f /etc/systemd/system/t1-touchbar-hw.{service,socket} /etc/systemd/user/t1-touchbar.service \
         /etc/udev/rules.d/99-zz-t1bridge-touchbar.rules /etc/modprobe.d/t1bridge.conf \
