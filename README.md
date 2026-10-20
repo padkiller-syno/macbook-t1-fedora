@@ -4,6 +4,10 @@ Référentiel complet de ce qu'il a fallu pour faire tourner la **Touch Bar**
 et la **caméra/micro** du MacBook Pro 2016 Touch Bar (coprocesseur Apple T1)
 sous **Fedora 44**, kernel `7.2.10-200.fc44.x86_64`.
 
+> **Debian 13 (kernel 6.12)** : même machine, tout refait et fonctionnel
+> (Wi-Fi, son, T1 régénérée, Touch Bar, caméra, écran noir amdgpu) →
+> [`debian13/`](debian13/README.md).
+
 T1 = le coprocesseur Apple qui pilote la Touch Bar, la caméra FaceTime HD,
 le rétroéclairage clavier et le Touch ID. Sous Linux, il apparaît comme un
 iBridge USB (`05ac:8600`) qu'il faut « réveiller ».
@@ -25,7 +29,7 @@ iBridge USB (`05ac:8600`) qu'il faut « réveiller ».
 | **Touch Bar** (t1bridge + SELinux + boot) | ✅ Fonctionnelle et stable | [`touchbar/`](touchbar/README.md) |
 | **Caméra + micro** (cam virtuelle v4l2loopback) | ✅ Fonctionnels, caméra éteinte au repos | [`camera/`](camera/README.md) |
 | **Clavier SPI : swap @ / \<** | ⏸️ Diagnostiqué, fix différé | [`keyboard/`](keyboard/README.md) |
-| **Écran noir aléatoire** (bug amdgpu Polaris) | ⏳ Fix posé, à tester au reboot | [`display/`](display/README.md) |
+| **Écran noir aléatoire** (bug amdgpu Polaris) | ⏳ Fix posé, à tester au reboot — résolu sous Debian par `power_dpm_force_performance_level=high`, voir [`debian13/`](debian13/README.md#écran-noir--gel--amdgpu-polaris) | [`display/`](display/README.md) |
 
 ## Arborescence
 

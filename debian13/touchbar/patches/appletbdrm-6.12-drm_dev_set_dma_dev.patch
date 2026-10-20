@@ -1,0 +1,14 @@
+diff --git a/kernel/appletbdrm-t1/appletbdrm.c b/kernel/appletbdrm-t1/appletbdrm.c
+index fd28853..e9b7d87 100644
+--- a/kernel/appletbdrm-t1/appletbdrm.c
++++ b/kernel/appletbdrm-t1/appletbdrm.c
+@@ -551,7 +551,9 @@ static int appletbdrm_probe(struct usb_interface *intf,
+ 
+ 	dma_dev = usb_intf_get_dma_device(intf);
+ 	if (dma_dev) {
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 16, 0)
+ 		drm_dev_set_dma_dev(drm, dma_dev);
++#endif
+ 		put_device(dma_dev);
+ 	} else {
+ 		drm_warn(drm, "buffer sharing not supported"); /* not an error */

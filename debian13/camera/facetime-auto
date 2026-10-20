@@ -1,0 +1,40 @@
+#!/bin/bash
+# Caméra virtuelle « FaceTime HD » (/dev/video10) à la demande :
+# au repos, une image noire légère (voyant éteint) ; dès qu'une application lit
+# /dev/video10, on la remplace par le décodage H.264 de la caméra T1.
+LOOP=/dev/video10
+GRACE=5   # secondes sans lecteur avant de recouper la caméra
+SRC=; MODE=; idle=0
+
+t1_cam() { for d in /dev/video[0-9]; do v4l2-ctl -d "$d" --list-formats 2>/dev/null | grep -q H264 && { echo "$d"; return; }; done; }
+stop_src() { [ -n "$SRC" ] && { kill $SRC 2>/dev/null; wait $SRC 2>/dev/null; }; SRC=; MODE=; }
+start_black() {
+  ffmpeg -hide_banner -loglevel error -re -f lavfi -i color=black:s=1280x720:r=5 \
+         -pix_fmt yuyv422 -f v4l2 $LOOP & SRC=$!; MODE=noir
+}
+start_cam() {
+  local cam; cam=$(t1_cam); [ -n "$cam" ] || return 1
+  ffmpeg -hide_banner -loglevel error -f v4l2 -input_format h264 -video_size 1280x720 -framerate 30 -i "$cam" \
+         -vf format=yuyv422 -r 30 -f v4l2 $LOOP & SRC=$!; MODE=camera
+  echo "caméra activée"
+}
+
+# Format libre au démarrage (un ancien format gardé bloquerait la source), puis figé
+v4l2-ctl -d $LOOP -c keep_format=0,sustain_framerate=1
+trap 'stop_src; exit 0' TERM INT
+start_black
+sleep 2
+v4l2-ctl -d $LOOP -c keep_format=1
+while sleep 1; do
+  [ -n "$SRC" ] && ! kill -0 $SRC 2>/dev/null && { SRC=; MODE=; }
+  readers=$(fuser $LOOP 2>/dev/null | tr -s ' ' '\n' | grep -vxE "${SRC:-x}|")
+  if [ -n "$readers" ]; then
+    idle=0
+    if [ "$MODE" != camera ]; then stop_src; start_cam || start_black; fi
+  else
+    if [ "$MODE" = camera ]; then
+      idle=$((idle+1))
+      [ $idle -ge $GRACE ] && { stop_src; start_black; idle=0; echo "caméra coupée"; }
+    elif [ -z "$SRC" ]; then start_black; fi
+  fi
+done

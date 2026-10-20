@@ -3,6 +3,13 @@
 **Statut : fix v2 posé (2026-10-16), à tester au prochain reboot.**
 Le fix v1 (`amdgpu.dc=0`) est **banni** — il cassait l'affichage au boot.
 
+> **Mise à jour 2026-10-20 (Debian 13, même machine)** : le gel est résolu en
+> fixant les fréquences de la Polaris — `power_dpm_force_performance_level=high`
+> via une règle udev (MCLK bloquée à 1270 MHz au lieu de basculer
+> 300 ↔ 1270 MHz). Applicable à chaud, réversible sans reboot. Devrait
+> s'appliquer tel quel sous Fedora. Détails et liste des essais ratés :
+> [`../debian13/README.md`](../debian13/README.md#écran-noir--gel--amdgpu-polaris).
+
 ## Symptôme
 
 Au hasard : l'écran devient **noir**, le système reste **100 % vivant**

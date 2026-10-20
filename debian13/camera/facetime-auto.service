@@ -1,0 +1,13 @@
+[Unit]
+Description=Caméra FaceTime HD à la demande (T1 H.264 -> /dev/video10)
+After=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/facetime-auto
+# Laisse la caméra virtuelle devenir « capture », puis fait réexaminer les caméras par PipeWire
+ExecStartPost=/bin/sh -c 'sleep 3; systemctl --user restart wireplumber.service'
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
