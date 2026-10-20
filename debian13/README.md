@@ -16,7 +16,7 @@ t1bridge cible les kernels **7.x**. Deux modules ont dû être portés.
 | **T1 en recovery** (`05ac:1281`) | ✅ régénérée avec t1-revive | [`t1-revive/`](#t1-revive-t1-bloquée-en-recovery) |
 | **Touch Bar** | ✅ (t1bridge, modules portés en 6.12) | [`touchbar/`](touchbar/) |
 | **Caméra** FaceTime HD | ✅ caméra virtuelle à la demande (Meet, Firefox, GNOME Caméra) | [`camera/`](camera/) |
-| **Écran noir / gel** (amdgpu Polaris) | ✅ `power_dpm_force_performance_level=high` | [`display/`](display/) |
+| **Écran noir / gel** (amdgpu Polaris) | ✅ niveau DPM fixe (`high`, ou `low` en économie d'énergie) | [`display/`](#écran-noir--gel--amdgpu-polaris) |
 | **Clavier** `@` / `<` inversés | ✅ `applespi iso_layout=1` | [`../keyboard/`](../keyboard/README.md) |
 | **Touch ID** (sudo, polkit, verrouillage, GDM) | ✅ 2 doigts, Touch Bar en français | [`touchid/`](#touch-id) |
 | **Touch Bar : volume / média** | ✅ fournisseur bureau GNOME + PipeWire | [`touchbar/desktop-provider/`](#touch-bar--volume-sourdine-média) |
@@ -212,6 +212,55 @@ réversible sans reboot** :
 ```sh
 echo auto | sudo tee /sys/class/drm/card*/device/power_dpm_force_performance_level
 ```
+
+### Mise à jour : `low` en mode économie d'énergie
+
+Le `high` permanent coûte de la batterie. Comme ce qui gèle la carte est la
+**bascule** MCLK en cours d'affichage (mode `auto`), un niveau **fixe** bas est
+aussi sûr qu'un niveau fixe haut : `low` bloque MCLK à 300 MHz.
+
+[`display/install-amdgpu-profils.sh`](display/install-amdgpu-profils.sh)
+(remplace `fix-amdgpu-high.sh`) installe `/usr/local/sbin/amdgpu-power-sync`,
+un service qui sonde toutes les 2 s le profil power-profiles-daemon (menu
+GNOME) et les écrans externes de la Radeon :
+
+| Profil GNOME | Écran externe | Niveau |
+|---|---|---|
+| Économie d'énergie | non | `low` (MCLK 300 MHz) — **après 6 s stables** |
+| Économie d'énergie | oui | `high` — **immédiat** (2 écrans : le DC imposerait de toute façon 1270 MHz) |
+| Équilibré / Performance | — | `high` — immédiat |
+
+- **Jamais `auto`.** Au boot, la règle udev `80-amdgpu-high.rules`
+  (`ACTION=="add"` seulement) met `high` dès l'apparition de la carte, et le
+  service démarre `Before=display-manager.service`.
+- **Asymétrie volontaire** : `high` tout de suite (direction sûre), `low`
+  seulement après 3 sondages d'affilée. Au débranchement du Dell, la carte est
+  donc encore en `high` (MCLK ne bouge pas), et ne descend qu'ensuite, avec un
+  seul écran.
+
+Pièges des versions précédentes :
+1. Règle udev `RUN+=` sur `change` : l'événement de branchement arrive
+   **avant** que `card0-DP-1/status` passe à `connected` → script exécuté
+   « sans écran externe » → reste `low` avec le Dell branché (le DC remonte
+   alors MCLK à 1270 MHz tout seul… et la redescendra en plein affichage au
+   débranchement : le scénario de gel).
+2. `udevadm monitor` + `gdbus monitor` (événementiel) : le Dell a
+   brièvement disparu (renégociation / veille de l'écran) → passage en `low`,
+   et aucun événement au retour → `low` avec le Dell branché. D'où le
+   sondage avec anti-rebond.
+
+Tests (machine restée en marche tout du long) :
+
+| Heure | Action | Résultat |
+|---|---|---|
+| 22:00:16 → 22:01:48 | 5 bascules de profil, écran interne seul | `low`↔`high` à chaud, aucun gel |
+| 22:08:21 | économie, Dell débranché | `low` (stable 6 s) |
+| 22:08:40 | Équilibré | `high` |
+| 22:08:46 | économie | `low` (stable 6 s) |
+| 22:08:48 | Dell rebranché | `high` 2 s après |
+
+Annuler (retour au `high` permanent) :
+`sudo bash display/install-amdgpu-profils.sh annuler`.
 
 **Ce qui n'a pas marché / à éviter** :
 
