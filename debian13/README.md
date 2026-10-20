@@ -18,7 +18,7 @@ t1bridge cible les kernels **7.x**. Deux modules ont dû être portés.
 | **Caméra** FaceTime HD | ✅ caméra virtuelle à la demande (Meet, Firefox, GNOME Caméra) | [`camera/`](camera/) |
 | **Écran noir / gel** (amdgpu Polaris) | ✅ `power_dpm_force_performance_level=high` | [`display/`](display/) |
 | Touch ID | ⏸️ non fait (volontairement) | — |
-| Veille (suspend) | ❌ ne marche pas avec la pile t1bridge | — |
+| Veille (suspend) | ❌ ne marche pas avec la pile t1bridge → veille désactivée (auto + capot) | [`systeme/`](#réglages-système-revue-du-syslog) |
 
 ---
 
@@ -219,6 +219,42 @@ echo auto | sudo tee /sys/class/drm/card*/device/power_dpm_force_performance_lev
 | `outb 0x728/0x710/0x740` dans GRUB | non tenté : le gmux est **indexed** (v4.0.29), ces ports sont ceux des anciens gmux |
 | `amdgpu.dc=0` | non retenté (cassait l'affichage sous Fedora) |
 | `amdgpu.sg_display=0` (piste Fedora) | non tenté : ce paramètre concerne les APU, a priori sans effet sur une Polaris dédiée |
+
+## Réglages système (revue du syslog)
+
+Revue de `journalctl -b -p warning` + kernel : aucune unité en échec,
+microcode à jour (`0xf0`, dernier pour ce Skylake). Deux corrections :
+
+**Veille désactivée** — la veille casse la pile t1bridge et la reprise amdgpu
+(risque d'écran noir / gel au réveil). Par défaut, GNOME mettait en veille
+après 15 min sur batterie, et logind à la fermeture du capot.
+
+```sh
+# veille auto sur batterie -> rien (l'écran s'éteint et se verrouille quand même)
+gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-battery-type 'nothing'
+```
+
+```ini
+# /etc/systemd/logind.conf.d/10-capot-verrouille.conf
+[Login]
+HandleLidSwitch=lock
+HandleLidSwitchExternalPower=lock
+HandleLidSwitchDocked=ignore
+```
+
+⚠️ Capot fermé = machine allumée : l'éteindre avant de la ranger dans un sac.
+
+**Firmware Realtek** — l'adaptateur Ethernet USB 2,5 Gbit (RTL8156B, `r8152`)
+tournait sans son firmware (`failed to load rtl_nic/rtl8156b-2.fw`) →
+`apt install firmware-realtek`.
+
+Les deux : [`systeme/fix-veille-realtek.sh`](systeme/fix-veille-realtek.sh).
+
+**Ignorés volontairement** (bruit sans effet) : erreurs ACPI `_PDC`/`GCAP`/
+`OSCP` (tables Apple pour macOS), `brcm/BCM.hcd` absent (firmware Bluetooth
+Apple non distribuable, le Bluetooth marche), `clm_blob`/`txcap_blob`
+brcmfmac (n'existent pas pour la 43602), avertissements MDS/MMIO « SMT on »,
+`hid_field_extract() n (64) > 32` sur l'iBridge, warnings GNOME/ALSA/keyring.
 
 ## Après une mise à jour du kernel
 
