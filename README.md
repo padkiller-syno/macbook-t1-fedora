@@ -28,7 +28,7 @@ iBridge USB (`05ac:8600`) qu'il faut « réveiller ».
 |---|---|---|
 | **Touch Bar** (t1bridge + SELinux + boot) | ✅ Fonctionnelle et stable | [`touchbar/`](touchbar/README.md) |
 | **Caméra + micro** (cam virtuelle v4l2loopback) | ✅ Fonctionnels, caméra éteinte au repos | [`camera/`](camera/README.md) |
-| **Clavier SPI : swap @ / \<** | ⏸️ Diagnostiqué, fix différé | [`keyboard/`](keyboard/README.md) |
+| **Clavier SPI : swap @ / \<** | ✅ `applespi iso_layout=1` | [`keyboard/`](keyboard/README.md) |
 | **Écran noir aléatoire** (bug amdgpu Polaris) | ⏳ Fix posé, à tester au reboot — résolu sous Debian par `power_dpm_force_performance_level=high`, voir [`debian13/`](debian13/README.md#écran-noir--gel--amdgpu-polaris) | [`display/`](display/README.md) |
 
 ## Arborescence
@@ -60,7 +60,7 @@ iBridge USB (`05ac:8600`) qu'il faut « réveiller ».
 - **Caméra** : `install/install-camera.sh` fait tout (module + 3 services + enable).
 - **Touch Bar** : voir `touchbar/README.md` (source : dépôt `standardagents/t1bridge`,
   branche/v0.1.12 = HEAD upstream au 15/10/2026).
-- **Clavier** : `keyboard/README.md` contient le fix prévu (remap evdev) et les
-  précautions à prendre.
+- **Clavier** : résolu par `options applespi iso_layout=1` (+ régénérer
+  l'initramfs), voir `keyboard/README.md`.
 - **Écran noir** : `display/README.md` — le fix `amdgpu.sg_display=0 gpu_recovery=1`
   est posé sur le kernel 7.2.10 via `grubby` ; `6.19.10` reste en fallback propre.

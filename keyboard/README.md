@@ -1,7 +1,24 @@
-# Clavier SPI — swap @ / \< (diagnostiqué, fix différé)
+# Clavier SPI — swap @ / \<
 
-**Statut : diagnostic terminé, fix différé par l'utilisateur.**
-Tout est prêt pour le reprendre.
+**Statut : ✅ résolu (2026-10-20, sous Debian 13)** — option du driver
+`applespi` : `iso_layout=1`. Aucun remap evdev nécessaire.
+
+```sh
+echo Y | sudo tee /sys/module/applespi/parameters/iso_layout     # à chaud
+echo "options applespi iso_layout=1" | sudo tee /etc/modprobe.d/applespi-iso.conf
+sudo update-initramfs -u      # Fedora : sudo dracut -f  (applespi est dans l'initramfs : saisie LUKS)
+```
+
+`iso_layout` échange `KEY_GRAVE` (41) et `KEY_102ND` (86), exactement les deux
+codes mesurés ci-dessous. **Correction du diagnostic** : 86 n'est pas
+`KEY_ASTERISK` mais **`KEY_102ND`** (la touche `<>` des claviers ISO, `<LSGT>`) ;
+la touche `&` (`KEY_1`) n'est pas concernée.
+
+Script : [`../debian13/systeme/fix-clavier-iso.sh`](../debian13/systeme/fix-clavier-iso.sh).
+
+---
+
+*Diagnostic d'origine (Fedora, 15/10) :*
 
 ## Symptôme
 
