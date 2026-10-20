@@ -16,7 +16,8 @@ t1bridge cible les kernels **7.x**. Deux modules ont dû être portés.
 | **T1 en recovery** (`05ac:1281`) | ✅ régénérée avec t1-revive | [`t1-revive/`](#t1-revive-t1-bloquée-en-recovery) |
 | **Touch Bar** | ✅ (t1bridge, modules portés en 6.12) | [`touchbar/`](touchbar/) |
 | **Caméra** FaceTime HD | ✅ caméra virtuelle à la demande (Meet, Firefox, GNOME Caméra) | [`camera/`](camera/) |
-| **Écran noir / gel** (amdgpu Polaris) | ✅ niveau DPM fixe (`high`, ou `low` en économie d'énergie) | [`display/`](#écran-noir--gel--amdgpu-polaris) |
+| **Écran noir / gel** (amdgpu Polaris) | ✅ niveau DPM fixe (`high`, ou `low` en économie d'énergie) |
+| **Profils d'énergie** (CPU, turbo, secteur) | ✅ économie 800 MHz, équilibré sans turbo, performance turbo ; secteur → équilibré | [`display/`](#écran-noir--gel--amdgpu-polaris) |
 | **Clavier** `@` / `<` inversés | ✅ `applespi iso_layout=1` | [`../keyboard/`](../keyboard/README.md) |
 | **Touch ID** (sudo, polkit, verrouillage, GDM) | ✅ 2 doigts, Touch Bar en français | [`touchid/`](#touch-id) |
 | **Touch Bar : volume / média** | ✅ fournisseur bureau GNOME + PipeWire | [`touchbar/desktop-provider/`](#touch-bar--volume-sourdine-média) |
@@ -259,7 +260,36 @@ Tests (machine restée en marche tout du long) :
 | 22:08:46 | économie | `low` (stable 6 s) |
 | 22:08:48 | Dell rebranché | `high` 2 s après |
 
-Annuler (retour au `high` permanent) :
+### CPU et secteur (même service)
+
+La même boucle de 2 s règle aussi le processeur (`intel_pstate`) et réagit au
+chargeur :
+
+| Profil GNOME | Turbo | Fréquence max (8 cœurs) | EPP (par power-profiles-daemon) |
+|---|---|---|---|
+| Économie d'énergie | off | **800 MHz** (`cpuinfo_min_freq`) | `power` |
+| Équilibré | off | 2700 MHz | `balance_performance` |
+| Performance | **on** | **3600 MHz** | `performance` |
+
+- Sans ce service, power-profiles-daemon ne change **que l'EPP** : aucune
+  limite de fréquence, quel que soit le profil.
+- Turbo coupé par défaut dès le boot par un `disable-turbo.service` maison
+  (`echo 1 > /sys/devices/system/cpu/intel_pstate/no_turbo`) ; le service ne
+  le réactive qu'en Performance.
+- **Secteur** : au **branchement** du chargeur (`ADP1/online` 0 → 1), si le
+  profil est Économie d'énergie, il passe en **Équilibré**
+  (`busctl set-property … ActiveProfile s balanced`). Seule la transition
+  déclenche : repasser à la main en Économie sur secteur reste possible.
+
+Vérifié (journal `amdgpu-power-sync`) : économie → `cpu: max 800 MHz`, puis
+`card0: low` 4 s plus tard ; chargeur branché → `secteur branché : économie
+d'énergie -> équilibré`, `card0: high`, `cpu: max 2700 MHz` dans la même
+seconde ; Performance → `turbo activé`, `max 3600 MHz`.
+
+Lire le journal sans sudo : `sudo usermod -aG systemd-journal $USER`, puis se
+reconnecter ; ensuite `journalctl -t amdgpu-power-sync -b`.
+
+Annuler (retour au `high` permanent, CPU sans limite, turbo laissé off) :
 `sudo bash display/install-amdgpu-profils.sh annuler`.
 
 **Ce qui n'a pas marché / à éviter** :
