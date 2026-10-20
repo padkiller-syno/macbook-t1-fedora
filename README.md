@@ -5,7 +5,7 @@ et la **caméra/micro** du MacBook Pro 2016 Touch Bar (coprocesseur Apple T1)
 sous **Fedora 44**, kernel `7.2.10-200.fc44.x86_64`.
 
 > **Debian 13 (kernel 6.12)** : même machine, tout refait et fonctionnel
-> (Wi-Fi, son, T1 régénérée, Touch Bar, caméra, écran noir amdgpu) →
+> (Wi-Fi, son, T1 régénérée, Touch Bar, caméra, Touch ID, écran noir amdgpu) →
 > [`debian13/`](debian13/README.md).
 
 T1 = le coprocesseur Apple qui pilote la Touch Bar, la caméra FaceTime HD,

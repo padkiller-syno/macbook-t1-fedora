@@ -18,7 +18,7 @@ t1bridge cible les kernels **7.x**. Deux modules ont dû être portés.
 | **Caméra** FaceTime HD | ✅ caméra virtuelle à la demande (Meet, Firefox, GNOME Caméra) | [`camera/`](camera/) |
 | **Écran noir / gel** (amdgpu Polaris) | ✅ `power_dpm_force_performance_level=high` | [`display/`](display/) |
 | **Clavier** `@` / `<` inversés | ✅ `applespi iso_layout=1` | [`../keyboard/`](../keyboard/README.md) |
-| Touch ID | ⏸️ non fait (volontairement) | — |
+| **Touch ID** (sudo, polkit, verrouillage, GDM) | ✅ 2 doigts, Touch Bar en français | [`touchid/`](#touch-id) |
 | Veille (suspend) | ❌ ne marche pas avec la pile t1bridge → veille désactivée (auto + capot) | [`systeme/`](#réglages-système-revue-du-syslog) |
 
 ---
@@ -221,6 +221,106 @@ echo auto | sudo tee /sys/class/drm/card*/device/power_dpm_force_performance_lev
 | `amdgpu.dc=0` | non retenté (cassait l'affichage sous Fedora) |
 | `amdgpu.sg_display=0` (piste Fedora) | non tenté : ce paramètre concerne les APU, a priori sans effet sur une Polaris dédiée |
 
+## Touch ID
+
+Fait **après** la Touch Bar (même t1bridge v0.1.12, commit `81cbdf8`).
+La T1 avait été régénérée par t1-revive : son `FDRData` est accepté par
+l'import (`t1bridge machine-data import`).
+
+### Phase 1 — services + libfprint/fprintd patchés (sans toucher à PAM)
+
+1. [`touchid/touchid-deps.sh`](touchid/touchid-deps.sh) : dépendances de
+   compilation (`libudev-dev`, `libarchive-dev`, `meson`, `libgusb-dev`,
+   `libgudev-1.0-dev`, `libpam0g-dev`, `libpolkit-gobject-1-dev`…) **+ pin APT**
+   `/etc/apt/preferences.d/no-debian-fprintd` (priorité -1 sur `fprintd`,
+   `libfprint-2-2`, `libpam-fprintd`) pour que Debian n'écrase jamais les
+   versions patchées. Il faut aussi `gettext` (msgfmt) pour fprintd.
+2. Binaires Rust (`--locked --release`, Rust ≥ 1.88 via rustup) :
+   `t1-xart-storage`, `t1-ncm-ready`, `t1-keybag-relay`
+   (`--features keybag-relay-service`), `t1-touchid-auth`
+   (`--features auth-broker-service`), `t1-touchid`, `t1-legacy-recovery`
+   (`--features legacy-recovery`), `t1bridge` (importer, `-p t1-import`).
+3. libfprint commit `3f1e281` + patches t1bridge `0001`/`0002`, fprintd
+   commit `b54a007` + patches `0001`/`0002` (sha256 identiques aux PKGBUILD) :
+
+   ```sh
+   meson setup build-libfprint --prefix=/usr -Ddrivers=all -Dinstalled-tests=false \
+     -Ddoc=false -Dintrospection=false \
+     -Dudev_rules_dir=/usr/lib/udev/rules.d -Dudev_hwdb_dir=/usr/lib/udev/hwdb.d
+   PKG_CONFIG_PATH=$PWD/build-libfprint/meson-uninstalled \
+   meson setup build-fprintd --prefix=/usr --sysconfdir=/etc -Dgtk_doc=false -Dman=false \
+     -Dpam=true -Dpam_modules_dir=/usr/lib/x86_64-linux-gnu/security \
+     -Dsystemd_system_unit_dir=/usr/lib/systemd/system
+   ```
+
+   (`-Dudev_*_dir` explicites : sans `systemd-dev`, `udev.pc` est absent.)
+4. [`touchid/install-touchid.sh`](touchid/install-touchid.sh) : module
+   `apple_t1_ncm` (compile tel quel en 6.12), binaires, unités systemd, lien
+   `50-t1bridge-ncm.link`, règle `90-t1bridge-xart.rules`, `meson install`
+   des deux projets (manifeste gardé pour `annuler`). Puis **poweroff**.
+
+Après reboot : `apple_t1_ncm` chargé, interface privée `eth0` (link-local
+IPv6, non gérée par NetworkManager), `t1-xart-storage@eth0` actif, port
+`[::]%eth0:61500` en écoute. **Aucun pare-feu actif** sur cette machine
+(nftables/firewalld/ufw inactifs) → rien à ouvrir.
+
+```sh
+sudo systemctl start t1bridge-import.service   # import FDRData depuis l'ESP
+sudo t1bridge status                           # tout « ready », keybag: not-enrolled
+fprintd-enroll -f right-index-finger
+fprintd-verify                                 # verify-match
+```
+
+⚠️ **Premier `fprintd-enroll` : `enroll-unknown-error`**
+(`t1bridge keybag: prepare device keybag failed`). Réseau T1 sain. Avec
+`/etc/t1bridge/diagnostics.conf` → `T1BRIDGE_DIAGNOSTICS=1` et
+`systemctl restart t1-touchid-auth.service`, la **2ᵉ tentative a réussi**
+(keybag créé, relais démarré, `phase=enroll result=ok`). Probablement un
+broker démarré trop tôt après le boot. Ne pas boucler ni effacer
+`/var/lib/t1bridge` : une seule nouvelle tentative, diagnostics activés.
+Penser à retirer `diagnostics.conf` ensuite.
+
+### Phase 2 — PAM
+
+- **GDM et l'écran de verrouillage** : `/etc/pam.d/gdm-fingerprint` (fourni
+  par gdm3) et `org.gnome.login-screen enable-fingerprint-authentication`
+  étaient déjà là ; il manquait juste `pam_fprintd.so`. Rien à modifier.
+- **sudo, polkit, su** : profil `pam-auth-update` (copie de celui de
+  `libpam-fprintd`) → [`touchid/touchid-pam.sh`](touchid/touchid-pam.sh) :
+
+  ```
+  auth  [success=2 default=ignore]  pam_fprintd.so max-tries=1 timeout=10
+  auth  [success=1 default=ignore]  pam_unix.so nullok try_first_pass
+  ```
+
+  Empreinte d'abord (10 s), mot de passe ensuite. Garder un shell root ouvert
+  pendant le test (`sudo -k; sudo true`). Annuler :
+  `sudo pam-auth-update --disable t1bridge-fprintd`.
+
+Restent au mot de passe : LUKS au boot, et la 1ʳᵉ connexion après boot
+(trousseau GNOME).
+
+### Touch Bar en français
+
+Les messages Touch ID de la Touch Bar ne sont pas des chaînes traduisibles :
+ce sont **5 masques alpha précalculés** (`overlay_labels.rs`, Inter Medium
+4.1). Régénérés en français avec la même police (`fonts-inter` Debian = 4.1)
+à **26 px** (taille étalonnée sur les originaux) :
+
+| Libellé | Original | Français |
+|---|---|---|
+| `ENROLLMENT` | Lift and rest your finger on Touch ID repeatedly | Posez et levez le doigt sur Touch ID plusieurs fois |
+| `AUTHENTICATE` | Unlock with Touch ID | Déverrouiller avec Touch ID |
+| `APPROVE` | Approve with Touch ID | Autoriser avec Touch ID |
+| `RETRY` | Try Again | Réessayez |
+| `SUCCESS` | Unlocked | Déverrouillé |
+
+[`touchid/gen-labels-fr.py`](touchid/gen-labels-fr.py) (ou le patch
+[`touchbar-labels-fr.patch`](touchid/patches/touchbar-labels-fr.patch)), puis
+`cargo build -p t1-touchbar`, `install` dans `/usr/lib/t1bridge/` et
+`systemctl --user restart t1-touchbar.service`. Les 96 tests du crate passent
+(la largeur des libellés est libre, mise à l'échelle par le renderer).
+
 ## Réglages système (revue du syslog)
 
 Revue de `journalctl -b -p warning` + kernel : aucune unité en échec,
@@ -262,6 +362,6 @@ brcmfmac (n'existent pas pour la 43602), avertissements MDS/MMIO « SMT on »,
 - **Son** : reconstruit tout seul (DKMS).
 - **Touch Bar + caméra** : modules installés à la main dans
   `updates/t1bridge/` → **pas** reconstruits. Recompiler `t1_cfgsel`,
-  `appletbdrm` (patché) et `uvcvideo` (patché) contre le nouveau kernel, puis
-  relancer `install-touchbar.sh`.
+  `appletbdrm` (patché), `uvcvideo` (patché) et `apple_t1_ncm` contre le
+  nouveau kernel, puis relancer `install-touchbar.sh` / `install-touchid.sh`.
 - `v4l2loopback` : DKMS (paquet Debian), automatique.
