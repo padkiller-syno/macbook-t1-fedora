@@ -472,6 +472,26 @@ Apple non distribuable, le Bluetooth marche), `clm_blob`/`txcap_blob`
 brcmfmac (n'existent pas pour la 43602), avertissements MDS/MMIO « SMT on »,
 `hid_field_extract() n (64) > 32` sur l'iBridge, warnings GNOME/ALSA/keyring.
 
+### Trackpad désactivé quand une souris externe est branchée
+
+Rien à installer : c'est une option libinput exposée par GNOME (absente de
+l'interface Paramètres) :
+
+```sh
+gsettings set org.gnome.desktop.peripherals.touchpad send-events 'disabled-on-external-mouse'
+# annuler : ... send-events 'enabled'
+```
+
+Vérifié avant d'activer, avec `udevadm info -q property -n /dev/input/eventN` :
+
+| Périphérique | Classement udev | Effet |
+|---|---|---|
+| Apple SPI Touchpad | `ID_INPUT_TOUCHPAD` | le trackpad, désactivé/réactivé |
+| Apple Inc. iBridge Touchpad (T1) | `ID_INPUT_TOUCHPAD` | **pas** pris pour une souris → ne bloque pas le trackpad |
+| Souris USB (ex. Cherry `046a:b103` via le hub du Dell) | `ID_INPUT_MOUSE` | déclenche la désactivation |
+
+Une souris Bluetooth déclenche aussi la désactivation.
+
 ## Veille et hibernation — impossibles (amdgpu)
 
 **Verdict : ni la veille ni l'hibernation ne fonctionnent** sur ce Mac sous
