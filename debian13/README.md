@@ -12,7 +12,7 @@ t1bridge cible les kernels **7.x**. Deux modules ont dû être portés.
 | Chantier | Statut | Dossier |
 |---|---|---|
 | **Wi-Fi** BCM43602 (5 GHz, signal) | ✅ -55 dBm en 5 GHz (contre -89 dBm en 2,4 GHz avant) | [`wifi/`](wifi/) |
-| **Son** CS8409 (haut-parleurs + micro) | ✅ | [`son/`](son/) |
+| **Son** CS8409 (haut-parleurs + micro interne) | ✅ — ❌ micro du casque jack non pris en charge | [`son/`](son/) |
 | **T1 en recovery** (`05ac:1281`) | ✅ régénérée avec t1-revive | [`t1-revive/`](#t1-revive-t1-bloquée-en-recovery) |
 | **Touch Bar** | ✅ (t1bridge, modules portés en 6.12) | [`touchbar/`](touchbar/) |
 | **Caméra** FaceTime HD | ✅ caméra virtuelle à la demande (Meet, Firefox, GNOME Caméra) | [`camera/`](camera/) |
@@ -68,7 +68,40 @@ WirePlumber bloqué en état D.
 → `son/fix-son-rebuild.sh` corrige la détection (`| cut -d '+' -f1`) et
 recompile contre les vraies sources **6.12.113**.
 
-Micro : fonctionnel (source « Audio interne Stéréo analogique »).
+Micro interne : fonctionnel (source « Audio interne Stéréo analogique »).
+
+### ❌ Micro du casque jack : non pris en charge
+
+| Situation | Sortie | Micro |
+|---|---|---|
+| Sans casque | ✅ haut-parleurs | ✅ micro interne |
+| Casque jack branché | ✅ casque | ❌ **aucun** (ni casque, ni interne) |
+| Casque débranché ensuite | ✅ haut-parleurs | ✅ interne — mais l'état jack reste « branché » |
+
+Constaté (`amixer -c <PCH> contents`, `pw-dump <device>` EnumRoute/Route) :
+
+- Branchement : `Mic Jack` et `Headphone Jack` passent à `on`, PipeWire
+  bascule sur la route `analog-input-mic` (« Microphone ») et marque
+  `analog-input-internal-mic` indisponible. `Capture Source` reste sur
+  `Internal Mic` (0) : la bascule vers `Mic` (1) ne tient pas, et
+  l'enregistrement est un **silence numérique** (-91 dB).
+- Forcer la route micro interne
+  (`pw-cli s <device> Route '{ index: 0, device: 0, save: false }'`) avec le
+  casque branché : toujours -91 dB → le pilote coupe aussi le micro interne
+  quand un casque est présent.
+- Débranchement : les deux contrôles jack **restent à `on`** (le pilote ne
+  voit pas le retrait). Le son et le micro interne refonctionnent quand
+  même ; seules les routes PipeWire restent « casque ». Remise en ordre
+  manuelle : `pw-cli s <device> Route '{ index: <speaker>, device: <n>, save: false }'`.
+
+Cause : limite du pilote [snd_hda_macbookpro](https://github.com/davidjo/snd_hda_macbookpro)
+(« Sound recording from internal mike and headset mike is not yet fully
+interfaced with Linux user side », `spec->headset_enable = 0`) ; le codec
+jack **CS42L83** n'a pas de documentation publique. Rien de simple à
+corriger côté système.
+
+Pour un micro de casque : casque **USB** ou adaptateur **USB-C → jack avec
+micro** (carte son USB, sans pilote), ou casque **Bluetooth** (profil HFP).
 
 ## t1-revive — T1 bloquée en recovery
 
