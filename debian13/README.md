@@ -23,6 +23,7 @@ t1bridge cible les kernels **7.x**. Deux modules ont dû être portés.
 | **Touch Bar : volume / média** | ✅ fournisseur bureau GNOME + PipeWire, bulle OSD (extension) | [`touchbar/desktop-provider/`](#touch-bar--volume-sourdine-média) |
 | **Capteur de lumière ambiante** | ✅ déjà fonctionnel (luminosité auto GNOME) | [ici](#capteur-de-lumière-ambiante) |
 | **Modules T1 sous DKMS** | ✅ reconstruits à chaque nouveau kernel | [`dkms/`](#après-une-mise-à-jour-du-kernel--dkms) |
+| **Thunderbolt 3 : USB 3 des écrans** (Ethernet) | ✅ runtime PM désactivé sur les contrôleurs USB 3 Alpine Ridge | [ici](#thunderbolt-3--usb-3-des-écrans--docks-perdu-ethernet-etc) |
 | Veille / hibernation | ❌ impossible : la Radeon Polaris ne se réveille pas → **interdites** au niveau système | [`veille/`](#veille-et-hibernation--impossibles-amdgpu) |
 
 ---
@@ -491,6 +492,47 @@ Vérifié avant d'activer, avec `udevadm info -q property -n /dev/input/eventN` 
 | Souris USB (ex. Cherry `046a:b103` via le hub du Dell) | `ID_INPUT_MOUSE` | déclenche la désactivation |
 
 Une souris Bluetooth déclenche aussi la désactivation.
+
+## Thunderbolt 3 : USB 3 des écrans / docks perdu (Ethernet, etc.)
+
+**Symptôme** : écrans USB-C branchés et affichés, souris/clavier sur leur
+hub OK, mais **leurs cartes Ethernet n'apparaissent pas** (aucune interface
+`enx…`, rien dans GNOME Réseau). Débrancher/rebrancher n'y change rien.
+
+**Diagnostic** (`lsusb -t`, `lspci`, `journalctl -k`) :
+
+- Les ports USB-C passent par deux contrôleurs Thunderbolt 3 **Alpine Ridge**
+  (JHL6540) ; chacun a un contrôleur USB 3 `8086:15d4` (`07:00.0`,
+  `7d:00.0` → bus USB 4 et 6, 10 Gbit/s). L'image passe en DisplayPort, et
+  l'USB 2 des écrans arrive par le contrôleur du PCH (bus 1) : c'est pour ça
+  que écran, souris et clavier marchent toujours.
+- Au boot, les deux **RTL8153** (une par écran, `r8152`) sont bien vues
+  (`enxb04f13fce492: carrier on`), puis vers **+89 s** :
+  `Tx status -71`, puis `usb 4-2: USB disconnect`, `6-1.4: USB disconnect`.
+- Ensuite les deux contrôleurs `15d4` sont en **runtime suspend**
+  (`power/control=auto`, `runtime_status=suspended`) et **ne se réveillent
+  pas au branchement** : aucun événement USB 3 dans le journal en rebranchant.
+
+**Fix** : interdire leur mise en veille.
+
+```sh
+# test immédiat (perdu au reboot)
+echo on | sudo tee /sys/bus/pci/devices/0000:07:00.0/power/control /sys/bus/pci/devices/0000:7d:00.0/power/control
+```
+
+→ les deux RTL8153 réapparaissent dans la seconde, la connexion filaire
+remonte et tient (2 min surveillées, 0 `Tx status` / `USB disconnect`).
+Permanent, par identifiant PCI (pas d'adresse figée) :
+[`systeme/fix-thunderbolt-usb3.sh`](systeme/fix-thunderbolt-usb3.sh)
+
+```
+# /etc/udev/rules.d/81-thunderbolt-usb3-on.rules
+ACTION=="add|bind", SUBSYSTEM=="pci", ATTR{vendor}=="0x8086", ATTR{device}=="0x15d4", ATTR{power/control}="on"
+```
+
+Non établi : si la veille a **provoqué** la coupure de +89 s ou l'a seulement
+suivie ; en pratique, l'empêcher suffit. Coût énergétique négligeable.
+À vérifier après un reboot : Ethernet toujours connecté au-delà de 2 min.
 
 ## Veille et hibernation — impossibles (amdgpu)
 
