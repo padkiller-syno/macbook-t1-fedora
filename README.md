@@ -29,7 +29,7 @@ iBridge USB (`05ac:8600`) qu'il faut « réveiller ».
 | **Touch Bar** (t1bridge + SELinux + boot) | ✅ Fonctionnelle et stable | [`touchbar/`](touchbar/README.md) |
 | **Caméra + micro** (cam virtuelle v4l2loopback) | ✅ Fonctionnels, caméra éteinte au repos | [`camera/`](camera/README.md) |
 | **Clavier SPI : swap @ / \<** | ✅ résolu sous Debian par `applespi iso_layout=1` — même fix à appliquer sous Fedora (`dracut -f`) | [`keyboard/`](keyboard/README.md) |
-| **Écran noir aléatoire** (bug amdgpu Polaris) | ✅ Fixé en forçant le niveau DPM à `low` ou `high` (jamais `auto`), voir [`debian13/`](debian13/README.md#écran-noir--gel--amdgpu-polaris) | [`display/`](display/README.md) |
+| **Écran noir aléatoire** (bug amdgpu Polaris) | ✅ Résolu en forçant le niveau DPM à `low` ou `high` (jamais `auto`), voir [`debian13/`](debian13/README.md#écran-noir--gel--amdgpu-polaris) | [`display/`](display/README.md) |
 
 ## Arborescence
 
