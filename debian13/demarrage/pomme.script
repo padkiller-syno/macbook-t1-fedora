@@ -1,0 +1,92 @@
+# Thème Plymouth « pomme » : pomme blanche sur fond noir, dans l'esprit du démarrage d'un Mac.
+# Saisie du mot de passe du disque façon macOS (pilule translucide, points, bouton flèche),
+# puis fine barre de progression sous la pomme. Images dessinées pour 2880x1800 (genere.py).
+Window.SetBackgroundTopColor(0, 0, 0);
+Window.SetBackgroundBottomColor(0, 0, 0);
+
+W = Window.GetWidth();
+H = Window.GetHeight();
+k = H / 1800;
+
+fun echelle(img) {
+  return img.Scale(Math.Int(img.GetWidth() * k), Math.Int(img.GetHeight() * k));
+}
+
+fun centrer_x(img) {
+  return Math.Int((W - img.GetWidth()) / 2);
+}
+
+# Pomme, légèrement au-dessus du centre
+logo.image = echelle(Image("pomme.png"));
+logo.y = Math.Int(H / 2 - logo.image.GetHeight() * 0.8);
+logo.sprite = Sprite(logo.image);
+logo.sprite.SetPosition(centrer_x(logo.image), logo.y, 1);
+
+# Champ du mot de passe
+champ.plein = echelle(Image("champ.png"));
+champ.vide = echelle(Image("champ-vide.png"));
+champ.x = centrer_x(champ.plein);
+champ.y = logo.y + logo.image.GetHeight() + Math.Int(84 * k);
+champ.sprite = Sprite(champ.plein);
+champ.sprite.SetPosition(champ.x, champ.y, 2);
+champ.sprite.SetOpacity(0);
+
+point.image = echelle(Image("point.png"));
+for (i = 0; i < 13; i++) {
+  points[i] = Sprite(point.image);
+  points[i].SetPosition(champ.x + Math.Int((28 + i * 24) * k), champ.y + Math.Int((champ.plein.GetHeight() - point.image.GetHeight()) / 2), 3);
+  points[i].SetOpacity(0);
+}
+
+fleche.image = echelle(Image("fleche.png"));
+fleche.sprite = Sprite(fleche.image);
+fleche.sprite.SetPosition(champ.x + champ.plein.GetWidth() - fleche.image.GetWidth() - Math.Int(8 * k), champ.y + Math.Int((champ.plein.GetHeight() - fleche.image.GetHeight()) / 2), 3);
+fleche.sprite.SetOpacity(0);
+
+# Barre de progression (affichée une fois le disque déverrouillé)
+barre.piste = echelle(Image("barre-piste.png"));
+barre.plein = echelle(Image("barre-plein.png"));
+barre.x = centrer_x(barre.piste);
+barre.y = logo.y + logo.image.GetHeight() + Math.Int(96 * k);
+barre.sprite_piste = Sprite(barre.piste);
+barre.sprite_piste.SetPosition(barre.x, barre.y, 2);
+barre.sprite_piste.SetOpacity(0);
+barre.sprite_plein = Sprite();
+barre.sprite_plein.SetPosition(barre.x, barre.y, 3);
+barre.visible = 0;
+
+fun display_password_callback(prompt, bullets) {
+  barre.visible = 0;
+  barre.sprite_piste.SetOpacity(0);
+  barre.sprite_plein.SetOpacity(0);
+  if (bullets > 0) champ.sprite.SetImage(champ.vide);
+  else champ.sprite.SetImage(champ.plein);
+  champ.sprite.SetOpacity(1);
+  # 13 points au plus : au-delà ils passeraient sous le bouton flèche
+  for (i = 0; i < 13; i++) {
+    if (i < bullets) points[i].SetOpacity(1);
+    else points[i].SetOpacity(0);
+  }
+  if (bullets > 0) fleche.sprite.SetOpacity(1);
+  else fleche.sprite.SetOpacity(0);
+}
+
+fun display_normal_callback() {
+  champ.sprite.SetOpacity(0);
+  fleche.sprite.SetOpacity(0);
+  for (i = 0; i < 13; i++) points[i].SetOpacity(0);
+  barre.visible = 1;
+  barre.sprite_piste.SetOpacity(1);
+}
+
+fun progress_callback(duree, progression) {
+  if (!barre.visible) return;
+  l = Math.Int(barre.piste.GetWidth() * progression);
+  if (l < barre.piste.GetHeight()) l = barre.piste.GetHeight();
+  barre.sprite_plein.SetImage(barre.plein.Scale(l, barre.piste.GetHeight()));
+  barre.sprite_plein.SetOpacity(1);
+}
+
+Plymouth.SetDisplayPasswordFunction(display_password_callback);
+Plymouth.SetDisplayNormalFunction(display_normal_callback);
+Plymouth.SetBootProgressFunction(progress_callback);

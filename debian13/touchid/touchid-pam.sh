@@ -11,9 +11,9 @@ Default: yes
 Priority: 260
 Auth-Type: Primary
 Auth:
-	[success=end default=ignore]	pam_fprintd.so max-tries=1 timeout=10
+	[success=end default=ignore]	pam_fprintd.so max-tries=3 timeout=30
 Auth-Initial:
-	[success=end default=ignore]	pam_fprintd.so max-tries=1 timeout=10
+	[success=end default=ignore]	pam_fprintd.so max-tries=3 timeout=30
 EOP
 pam-auth-update --enable t1bridge-fprintd
 echo "== /etc/pam.d/common-auth :"; grep -vE '^\s*#|^$' /etc/pam.d/common-auth

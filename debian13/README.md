@@ -14,16 +14,17 @@ t1bridge cible les kernels **7.x**. Deux modules ont dû être portés.
 | **Wi-Fi** BCM43602 (5 GHz, signal) | ✅ -55 dBm en 5 GHz (contre -89 dBm en 2,4 GHz avant) | [`wifi/`](wifi/) |
 | **Son** CS8409 (haut-parleurs + micro interne) | ✅ — ❌ micro du casque jack non pris en charge | [`son/`](son/) |
 | **T1 en recovery** (`05ac:1281`) | ✅ régénérée avec t1-revive | [`t1-revive/`](#t1-revive-t1-bloquée-en-recovery) |
-| **Touch Bar** | ✅ (t1bridge, modules portés en 6.12) | [`touchbar/`](touchbar/) |
+| **Touch Bar** | ✅ (t1bridge, modules portés en 6.12), allumée dès l'écran de connexion | [`touchbar/`](touchbar/) |
 | **Caméra** FaceTime HD | ✅ caméra virtuelle à la demande (Meet, Firefox, GNOME Caméra) | [`camera/`](camera/) |
 | **Écran noir / gel** (amdgpu Polaris) | ✅ niveau DPM fixe (`high`, ou `low` en économie d'énergie) |
-| **Profils d'énergie** (CPU, turbo, secteur) | ✅ économie 800 MHz, équilibré sans turbo, performance turbo ; secteur → équilibré | [`display/`](#écran-noir--gel--amdgpu-polaris) |
+| **Profils d'énergie** (CPU, turbo, secteur) | ✅ économie 1200 MHz, équilibré sans turbo, performance turbo ; secteur → équilibré | [`display/`](#écran-noir--gel--amdgpu-polaris) |
 | **Clavier** `@` / `<` inversés | ✅ `applespi iso_layout=1` | [`../keyboard/`](../keyboard/README.md) |
-| **Touch ID** (sudo, polkit, verrouillage, GDM) | ✅ 2 doigts, Touch Bar en français | [`touchid/`](#touch-id) |
+| **Touch ID** (sudo, polkit, verrouillage, GDM) | ✅ 2 doigts, 3 essais avant le mot de passe, Touch Bar en français | [`touchid/`](#touch-id) |
 | **Touch Bar : volume / média** | ✅ fournisseur bureau GNOME + PipeWire, bulle OSD (extension) | [`touchbar/desktop-provider/`](#touch-bar--volume-sourdine-média) |
 | **Capteur de lumière ambiante** | ✅ déjà fonctionnel (luminosité auto GNOME) | [ici](#capteur-de-lumière-ambiante) |
 | **Modules T1 sous DKMS** | ✅ reconstruits à chaque nouveau kernel | [`dkms/`](#après-une-mise-à-jour-du-kernel--dkms) |
 | **Thunderbolt 3 : USB 3 des écrans** (Ethernet) | ✅ runtime PM désactivé sur les contrôleurs USB 3 Alpine Ridge | [ici](#thunderbolt-3--usb-3-des-écrans--docks-perdu-ethernet-etc) |
+| **Écran de démarrage** (LUKS) | ✅ pomme blanche sur fond noir, saisie façon macOS (Plymouth) | [`demarrage/`](#écran-de-démarrage--pomme--plymouth) |
 | Veille / hibernation | ❌ impossible : la Radeon Polaris ne se réveille pas → **interdites** au niveau système | [`veille/`](#veille-et-hibernation--impossibles-amdgpu) |
 
 ---
@@ -101,6 +102,17 @@ interfaced with Linux user side », `spec->headset_enable = 0`) ; le codec
 jack **CS42L83** n'a pas de documentation publique. Rien de simple à
 corriger côté système.
 
+Confirmé ensuite avec un casque 4 pôles **et des écouteurs Apple d'origine**
+(EarPods jack) : le pilote détecte bien le micro et les boutons
+(`headset has mike`, `buttons detected` dans `journalctl -k`), mais
+l'enregistrement direct (`arecord -D hw:<PCH>,0`) ne rend rien d'utile :
+erreur d'E/S (aucun échantillon) quand une capture était déjà ouverte au
+branchement, sinon une **valeur constante** (`-1024` sur les deux canaux, aucun
+son). `Capture Source` revient aussitôt sur `Internal Mic` : le flux lit
+l'entrée que le pilote vient de couper. Une fiche mal enfoncée donne en plus
+`headset does not have mike` (pôles 3 et 4 à la masse) : l'enfoncer jusqu'au
+déclic.
+
 Pour un micro de casque : casque **USB** ou adaptateur **USB-C → jack avec
 micro** (carte son USB, sans pilote), ou casque **Bluetooth** (profil HFP).
 
@@ -150,6 +162,19 @@ Installation : [`touchbar/install-touchbar.sh`](touchbar/install-touchbar.sh)
 (modules dans `/lib/modules/$(uname -r)/updates/t1bridge/`, `t1_cfgsel` dans
 l'initramfs, services systemd + udev, groupe `t1bridge`).
 `sudo bash install-touchbar.sh annuler` retire tout.
+
+**Touch Bar dès l'écran de connexion** : le rendu (`t1-touchbar.service`) est
+une unité *user* globale (`/etc/systemd/user`), donc lancée aussi pour le
+compte de GDM. Mais le socket `/run/t1bridge/touchbar.sock` est
+`root:t1bridge 0660` : sans le groupe, le journal boucle sur *Touch Bar
+hardware service is unavailable; reconnecting* jusqu'à l'ouverture de session.
+
+```sh
+sudo usermod -aG t1bridge Debian-gdm     # effet au prochain démarrage
+```
+
+La session du greeter se ferme à la connexion : pas de conflit avec la Touch
+Bar de l'utilisateur (volume et média restent propres à la session).
 
 ### ⚠️ Piège : usbmuxd déconfigure la T1
 
@@ -301,7 +326,7 @@ chargeur :
 
 | Profil GNOME | Turbo | Fréquence max (8 cœurs) | EPP (par power-profiles-daemon) |
 |---|---|---|---|
-| Économie d'énergie | off | **800 MHz** (`cpuinfo_min_freq`) | `power` |
+| Économie d'énergie | off | **1200 MHz** (800 = trop lent) | `power` |
 | Équilibré | off | 2700 MHz | `balance_performance` |
 | Performance | **on** | **3600 MHz** | `performance` |
 
@@ -315,7 +340,7 @@ chargeur :
   (`busctl set-property … ActiveProfile s balanced`). Seule la transition
   déclenche : repasser à la main en Économie sur secteur reste possible.
 
-Vérifié (journal `amdgpu-power-sync`) : économie → `cpu: max 800 MHz`, puis
+Vérifié (journal `amdgpu-power-sync`) : économie → `cpu: max 1200 MHz`, puis
 `card0: low` 4 s plus tard ; chargeur branché → `secteur branché : économie
 d'énergie -> équilibré`, `card0: high`, `cpu: max 2700 MHz` dans la même
 seconde ; Performance → `turbo activé`, `max 3600 MHz`.
@@ -333,6 +358,7 @@ Annuler (retour au `high` permanent, CPU sans limite, turbo laissé off) :
 | `amdgpu.dcdebugmask=0x10` (désactive PSR) | gel toujours présent (laissé en place, inoffensif) |
 | `apple_gmux.force_igd=1` | **paramètre inexistant** en 6.12 (`unknown parameter 'force_igd' ignored`) |
 | `echo IGD > /sys/kernel/debug/vgaswitcheroo/switch` avant GDM (service systemd) | ❌ **écran noir complet** : i915 a déjà abandonné l'eDP au probe (`failed to retrieve link info, disabling eDP`), basculer le mux après coup ne le réveille pas. Récupéré via SSH. |
+| Variable EFI `gpu-power-prefs-fa4ce28d-b62f-4c99-9cc3-6815686e30f9` à 1 (le firmware branche l'eDP sur l'Intel avant Linux, comme macOS) | non tenté (jugé trop risqué) ; valeur actuelle `07 00 00 80 00 00 00 00` = 0. Retour arrière : réécrire 0 ou reset NVRAM (⌘⌥PR). Les ports externes restent câblés sur la Radeon. |
 | `outb 0x728/0x710/0x740` dans GRUB | non tenté : le gmux est **indexed** (v4.0.29), ces ports sont ceux des anciens gmux |
 | `amdgpu.dc=0` | non retenté (cassait l'affichage sous Fedora) |
 | `amdgpu.sg_display=0` (piste Fedora) | non tenté : ce paramètre concerne les APU, a priori sans effet sur une Polaris dédiée |
@@ -405,16 +431,24 @@ Penser à retirer `diagnostics.conf` ensuite.
   `libpam-fprintd`) → [`touchid/touchid-pam.sh`](touchid/touchid-pam.sh) :
 
   ```
-  auth  [success=2 default=ignore]  pam_fprintd.so max-tries=1 timeout=10
+  auth  [success=2 default=ignore]  pam_fprintd.so max-tries=3 timeout=30
   auth  [success=1 default=ignore]  pam_unix.so nullok try_first_pass
   ```
 
-  Empreinte d'abord (10 s), mot de passe ensuite. Garder un shell root ouvert
+  Empreinte d'abord (3 essais en 30 s ; au départ `max-tries=1 timeout=10`,
+  un seul essai), mot de passe ensuite. Garder un shell root ouvert
   pendant le test (`sudo -k; sudo true`). Annuler :
   `sudo pam-auth-update --disable t1bridge-fprintd`.
 
 Restent au mot de passe : LUKS au boot, et la 1ʳᵉ connexion après boot
 (trousseau GNOME).
+
+**Si Touch ID cesse de répondre** (`sep-lease … code=-110`,
+`verify-disconnected`) : un antivirus qui redirige tout le TCP sortant vers
+son proxy (constaté avec la protection web d'ESET Endpoint, règles nftables
+`eset_eea_wap6`) intercepte aussi le lien IPv6 *link-local* vers la T1
+(`fe80::` sur l'interface iBridge). Exclure `fe80::/10` dans l'antivirus ; ne
+pas refaire les empreintes.
 
 ### Touch Bar en français
 
@@ -667,6 +701,33 @@ Installation :
 `cp -r t1-osd@benoit ~/.local/share/gnome-shell/extensions/`, l'ajouter à
 `org.gnome.shell enabled-extensions`, puis **se reconnecter** (sous Wayland,
 une nouvelle extension n'est détectée qu'au démarrage de la session).
+
+## Écran de démarrage « pomme » (Plymouth)
+
+Sans `splash`, le mot de passe du disque chiffré se saisit en mode texte.
+Thème Plymouth maison dans [`demarrage/`](demarrage/), dans l'esprit d'un Mac :
+
+- pomme blanche centrée sur fond noir, à la taille du logo du firmware ;
+- champ « Saisir le mot de passe » en pilule translucide, points blancs et
+  bouton flèche dès le premier caractère (écran de connexion macOS) ;
+- fine barre de progression sous la pomme une fois le disque déverrouillé.
+
+Toutes les formes sont des images dessinées pour l'écran 2880×1800
+([`genere.py`](demarrage/genere.py), via GdkPixbuf/librsvg, police Inter) puis
+mises à l'échelle `H/1800` par le [script](demarrage/pomme.script) : pas de
+dépendance aux polices de l'initramfs. Le logo (marque Apple) n'est pas dans le
+dépôt, `genere.py` le récupère sur Wikimedia Commons.
+
+```sh
+cd demarrage && python3 genere.py && sudo bash install-pomme.sh
+```
+
+`install-pomme.sh` copie le thème, ajoute `splash` dans GRUB, le choisit et
+régénère l'initramfs (le pilote `amdgpu` y est déjà avec `MODULES=most`).
+Secours si l'écran reste noir : la saisie marche en aveugle ; ou dans GRUB
+`e`, effacer `splash`, Ctrl+X. Annuler :
+`sudo plymouth-set-default-theme -R debian-theme`, retirer `splash` de
+`/etc/default/grub`, `sudo update-grub`.
 
 ## Capteur de lumière ambiante
 

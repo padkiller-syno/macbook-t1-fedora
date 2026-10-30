@@ -25,7 +25,7 @@ fi
 cat > /usr/local/sbin/amdgpu-power-sync <<'EOS'
 #!/bin/sh
 # Radeon : low/high selon le profil power-profiles-daemon et les écrans externes.
-# CPU : économie -> 800 MHz max sans turbo ; équilibré -> sans limite, sans turbo ; performance -> turbo.
+# CPU : économie -> 1200 MHz max sans turbo ; équilibré -> sans limite, sans turbo ; performance -> turbo.
 # Secteur : au BRANCHEMENT du chargeur, « économie d'énergie » passe en « équilibré » (une fois).
 # Sondage toutes les 2 s : « high » immédiat, « low » seulement après 3 sondages d'affilée (6 s),
 # pour ignorer les déconnexions brèves d'un écran externe.
@@ -61,7 +61,7 @@ while :; do
   T=/sys/devices/system/cpu/intel_pstate/no_turbo; F=/sys/devices/system/cpu/cpu0/cpufreq
   if [ "$P" = performance ]; then nt=0; else nt=1; fi
   [ "$(cat $T)" = $nt ] || { echo $nt > $T && logger -t amdgpu-power-sync "cpu: turbo $([ $nt = 0 ] && echo activé || echo désactivé) (profil=${P:-?})"; }
-  if [ "$P" = power-saver ]; then mx=$(cat $F/cpuinfo_min_freq); else mx=$(cat $F/cpuinfo_max_freq); fi
+  if [ "$P" = power-saver ]; then mx=1200000; else mx=$(cat $F/cpuinfo_max_freq); fi
   if [ "$(cat $F/scaling_max_freq)" != "$mx" ]; then
     for m in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_max_freq; do echo $mx > $m; done
     logger -t amdgpu-power-sync "cpu: max $((mx / 1000)) MHz (profil=${P:-?})"
@@ -74,9 +74,9 @@ chmod 755 /usr/local/sbin/amdgpu-power-sync
 
 cat > /etc/systemd/system/amdgpu-power-sync.service <<'EOS'
 [Unit]
-Description=Profil d'énergie -> Radeon (low/high), CPU (800 MHz / sans turbo / turbo), secteur -> équilibré
-After=power-profiles-daemon.service
-Wants=power-profiles-daemon.service
+Description=Profil d'énergie -> Radeon (low/high), CPU (1200 MHz / sans turbo / turbo), secteur -> équilibré
+# Pas de After=power-profiles-daemon : sous Debian ce dernier est After=multi-user.target -> cycle,
+# systemd supprime alors ce service au boot. Le script sonde PPD et met « high » tant qu’il n’a pas répondu.
 Before=display-manager.service
 
 [Service]
